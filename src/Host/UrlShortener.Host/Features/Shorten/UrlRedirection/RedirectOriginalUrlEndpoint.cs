@@ -11,7 +11,8 @@ public static class RedirectOriginalUrlEndpoint
         group.MapGet("{code}", HandleAsync)
             .WithName("Redirect Original Url")
             .Produces(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .RequireRateLimiting("fixed");
 
         return group;
     }
