@@ -15,7 +15,8 @@ builder.Services
     .AddApplication(builder.Configuration)
     .AddPersistence(builder.Configuration)
     .AddMasstransitInfrastructure(builder.Configuration)
-    .AddCache(builder.Configuration);
+    .AddCache(builder.Configuration)
+    .AddDistributedLock(builder.Configuration);
 
 builder.Services.AddRateLimiter(options =>
 {

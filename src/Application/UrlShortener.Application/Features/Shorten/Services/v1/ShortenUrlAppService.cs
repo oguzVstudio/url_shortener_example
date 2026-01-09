@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using UrlShortener.Application.Features.Shared.Cache;
 using UrlShortener.Application.Features.Shorten.Services.v1.Models;
 using UrlShortener.Application.Services.CodeGenerators;
+using UrlShortener.Application.Shared.Cache;
 using UrlShortener.Domain;
 using UrlShortener.Domain.Shorten.Settings;
 using UrlShortener.Domain.Shorten.ShortenUrls;
@@ -14,18 +15,22 @@ public class ShortenUrlAppService : IShortenUrlAppService
 {
     private readonly IShortenDbContext _context;
     private readonly HybridCache _hybridCache;
+    private readonly IDistributedLock _distributedLock;
     private readonly IUniqueCodeGenerator _uniqueCodeGenerator;
     private readonly ShortenUrlSettings _shortenUrlSettings;
-    
+
     private const string ShortUrlCacheKey = "shortUrl:{0}";
+    private const string ShortUrlCodeLockKey = "shortUrlCodeLock:{0}";
 
     public ShortenUrlAppService(IShortenDbContext context,
         HybridCache hybridCache,
+        IDistributedLock distributedLock,
         IUniqueCodeGenerator uniqueCodeGenerator,
         IOptions<ShortenUrlSettings> shortenUrlSettings)
     {
         _context = context;
         _hybridCache = hybridCache;
+        _distributedLock = distributedLock;
         _uniqueCodeGenerator = uniqueCodeGenerator;
         _shortenUrlSettings = shortenUrlSettings.Value;
     }
@@ -44,7 +49,9 @@ public class ShortenUrlAppService : IShortenUrlAppService
 
         await _context.ShortenUrls.AddAsync(shortenUrl, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-
+        await _distributedLock.TryRemoveAsync(
+            string.Format(ShortUrlCodeLockKey, shortenUrl.Code),
+            cancellationToken);
         return new CreateShortUrlResponse(shortUrl, code, true);
     }
 
@@ -95,16 +102,30 @@ public class ShortenUrlAppService : IShortenUrlAppService
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
-    
+
     private async Task<string> GenerateCodeAsync(CancellationToken cancellationToken)
     {
         string code;
-        bool exists;
+        bool generated;
         do
         {
             code = await _uniqueCodeGenerator.GenerateAsync(cancellationToken);
-            exists = await _context.ShortenUrls.AnyAsync(x => x.Code == code, cancellationToken);
-        } while (exists);
+            var isLocked = await _distributedLock.TryLockAsync(
+                string.Format(ShortUrlCodeLockKey, code),
+                TimeSpan.FromMinutes(10),
+                cancellationToken);
+
+            if (isLocked)
+            {
+                var exists = await _context.ShortenUrls.AnyAsync(x => x.Code == code, cancellationToken);
+                generated = !exists;
+            }
+            else
+            {
+                generated = false;
+            }
+        } while (!generated);
+
         return code;
     }
 }
