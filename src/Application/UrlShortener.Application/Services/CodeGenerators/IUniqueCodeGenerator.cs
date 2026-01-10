@@ -2,5 +2,5 @@ namespace UrlShortener.Application.Services.CodeGenerators;
 
 public interface IUniqueCodeGenerator
 {
-    Task<string> GenerateAsync(CancellationToken cancellationToken);
+    ValueTask<string> GenerateAsync(CancellationToken cancellationToken);
 }

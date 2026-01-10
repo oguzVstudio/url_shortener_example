@@ -28,6 +28,8 @@ public class ShortenUrl
             LongUrl = longUrl,
             ShortUrl = shortUrl,
             Code = code,
+            IsExpiring = isExpiring,
+            ExpiresAt = expiresAt,
             CreatedOnUtc = DateTime.UtcNow
         };
     }

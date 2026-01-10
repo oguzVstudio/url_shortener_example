@@ -23,7 +23,7 @@ public class UrlTrackingConsumer : IConsumer<UrlTrackingEvent>
         try
         {
             var message = context.Message;
-            var scope = _serviceScopeFactory.CreateScope();
+            using var scope = _serviceScopeFactory.CreateScope();
             var service = scope.ServiceProvider.GetRequiredService<IShortenUrlAppService>();
 
             await service.TrackUrlAccessAsync(new CreateShortUrlTrackRequest(
@@ -32,7 +32,6 @@ public class UrlTrackingConsumer : IConsumer<UrlTrackingEvent>
                 IpAddress: message.IpAddress,
                 AccessedAt: message.AccessedAt
             ), context.CancellationToken);
-
         }
         catch (Exception ex)
         {

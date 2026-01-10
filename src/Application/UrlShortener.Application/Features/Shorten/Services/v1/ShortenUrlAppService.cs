@@ -19,8 +19,8 @@ public class ShortenUrlAppService : IShortenUrlAppService
     private readonly IUniqueCodeGenerator _uniqueCodeGenerator;
     private readonly ShortenUrlSettings _shortenUrlSettings;
 
-    private const string ShortUrlCacheKey = "shortUrl:{0}";
-    private const string ShortUrlCodeLockKey = "shortUrlCodeLock:{0}";
+    private const string ShortUrlCacheKeyPrefix = "shortUrl:";
+    private const string ShortUrlCodeLockKeyPrefix = "shortUrlCodeLock:";
 
     public ShortenUrlAppService(IShortenDbContext context,
         HybridCache hybridCache,
@@ -50,14 +50,14 @@ public class ShortenUrlAppService : IShortenUrlAppService
         await _context.ShortenUrls.AddAsync(shortenUrl, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         await _distributedLock.TryRemoveAsync(
-            string.Format(ShortUrlCodeLockKey, shortenUrl.Code),
+            $"{ShortUrlCodeLockKeyPrefix}{code}",
             cancellationToken);
         return new CreateShortUrlResponse(shortUrl, code, true);
     }
 
     public async Task<GetOriginalUrlResponse> GetOriginalUrlAsync(string code, CancellationToken cancellationToken)
     {
-        var cacheKey = new ShortenDistributedCacheKey(string.Format(ShortUrlCacheKey, code));
+        var cacheKey = new ShortenDistributedCacheKey($"{ShortUrlCacheKeyPrefix}{code}");
 
         var originalUrl = await _hybridCache.GetOrCreateAsync<string>(
             cacheKey.Key,
@@ -66,16 +66,10 @@ public class ShortenUrlAppService : IShortenUrlAppService
                 var shortenedUrl = await _context.ShortenUrls
                     .Where(x => x.Code == code
                                 && (!x.IsExpiring || x.ExpiresAt > DateTimeOffset.UtcNow))
-                    .Select(x => new
-                    {
-                        x.LongUrl,
-                        x.IsExpiring,
-                        x.ExpiresAt
-                    }).FirstOrDefaultAsync(entry);
-
-                var url = shortenedUrl?.LongUrl ?? string.Empty;
-                return url;
+                    .Select(x => x.LongUrl).FirstOrDefaultAsync(entry);
+                return shortenedUrl ?? string.Empty;
             }, cancellationToken: cancellationToken);
+
         return new GetOriginalUrlResponse(originalUrl,
             !string.IsNullOrWhiteSpace(originalUrl));
     }
@@ -111,13 +105,14 @@ public class ShortenUrlAppService : IShortenUrlAppService
         {
             code = await _uniqueCodeGenerator.GenerateAsync(cancellationToken);
             var isLocked = await _distributedLock.TryLockAsync(
-                string.Format(ShortUrlCodeLockKey, code),
+                $"{ShortUrlCodeLockKeyPrefix}{code}",
                 TimeSpan.FromMinutes(10),
                 cancellationToken);
 
             if (isLocked)
             {
-                var exists = await _context.ShortenUrls.AnyAsync(x => x.Code == code, cancellationToken);
+                var exists = await _context.ShortenUrls
+                    .AnyAsync(x => x.Code == code, cancellationToken);
                 generated = !exists;
             }
             else
